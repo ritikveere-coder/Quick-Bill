@@ -61,7 +61,23 @@ function renderCart(){let total=0;$('billLines').innerHTML=cart.length?`<div cla
 $('billLines').onchange=e=>{let i=e.target.dataset.qty??e.target.dataset.price;if(i===undefined)return;i=Number(i);if(e.target.dataset.qty!==undefined)cart[i].qty=Math.max(0.01,Number(e.target.value)||0.01);else cart[i].price=Math.max(0,Number(e.target.value)||0);renderCart()};$('billLines').onclick=e=>{let i=e.target.dataset.remove;if(i!==undefined){cart.splice(Number(i),1);renderCart()}};
 $('clearBill').onclick=()=>{if(cart.length&&confirm('Clear the current bill?')){cart=[];renderCart()}};
 function billHtml(b){return `<div style="font-family:Arial,sans-serif;color:#111"><h2 style="margin-bottom:4px">Purchase Bill</h2><div>Bill: ${esc(b.no)} · ${new Date(b.date).toLocaleString()}</div><div>Price type: ${esc(b.type)}</div><hr><table style="width:100%;border-collapse:collapse" border="1" cellpadding="7"><thead><tr><th align="left">Product</th><th>Qty</th><th>Unit price</th><th>Amount</th></tr></thead><tbody>${b.items.map(x=>`<tr><td>${esc(x.name)}${x.hindi?' / '+esc(x.hindi):''}</td><td align="right">${x.qty}</td><td align="right">${money(x.price)}</td><td align="right">${money(x.qty*x.price)}</td></tr>`).join('')}</tbody></table><h3 style="text-align:right">Total: ${money(b.total)}</h3><p>Thank you.</p></div>`}
-function printBill(b){let w=window.open('','_blank');if(!w){alert('Allow pop-ups for this file to print or save as PDF.');return}w.document.write('<!doctype html><html><head><title>'+esc(b.no)+'</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:Arial;padding:20px}@media print{button{display:none}}</style></head><body>'+billHtml(b)+'<button onclick="window.print()">Print / Save PDF</button></body></html>');w.document.close()}
+function printBill(b){let w=window.open('','_blank');if(!w){alert('Allow pop-ups for this file to print or save as PDF.');return}w.document.write('<!doctype html><html><head><title>'+esc(b.no)+'</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:Arial;padding:20px}@media print{button{display:none}}</style></head><body>'+billHtml(b)+'<button onclick="window.print()">Print / Save PDF</button><div id="offlineStatus" style="position:fixed;left:10px;bottom:10px;z-index:19;background:#fff;border:1px solid #ddd;border-radius:8px;padding:5px 8px;font:11px system-ui;color:#64748b">Setting up offline support…</div>
+
+<script>
+// Register the offline worker on the GitHub Pages project path.
+if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js', { scope: './' })
+      .then(() => navigator.serviceWorker.ready)
+      .then(() => {
+        const el = document.getElementById('offlineStatus');
+        if (el) el.textContent = 'Offline support ready';
+      })
+      .catch((err) => console.error('Offline setup failed:', err));
+  });
+}
+</script>
+</body></html>');w.document.close()}
 function makeBill(){if(!cart.length){alert('Add at least one product first.');return null}let items=cart.map(x=>({...x}));return {no:'PB-'+Date.now().toString().slice(-8),date:new Date().toISOString(),type:$('priceType').value,items,total:items.reduce((s,x)=>s+x.qty*x.price,0)}}
 $('saveBill').onclick=()=>{let b=makeBill();if(!b)return;db.bills.unshift(b);persist();cart=[];renderCart();printBill(b)};$('printBill').onclick=()=>{let b=makeBill();if(b)printBill(b)};
 function renderHistory(){let q=$('historySearch').value.toLowerCase(),a=db.bills.filter(b=>(b.no+' '+b.type+' '+(b.items||[]).map(x=>x.name+' '+(x.hindi||'')).join(' ')).toLowerCase().includes(q));$('historyList').innerHTML=a.length?a.map(b=>`<div class="item"><div><strong>${esc(b.no)} · ${money(b.total)}</strong><div class="muted">${new Date(b.date).toLocaleString()} · ${esc(b.type)}</div></div><button class="smallbtn" data-reprint="${b.no}">View / Print</button></div>`).join(''):'<div class="empty">No saved bills yet.</div>'}
@@ -75,4 +91,20 @@ function parseCSV(text){let rows=[],row=[],v='',q=false;for(let i=0;i<text.lengt
 $('csvFile').onchange=async e=>{let f=e.target.files[0];if(!f)return;try{let rows=parseCSV(await f.text()),headers=rows.shift().map(x=>x.trim().toLowerCase()),idx=k=>headers.indexOf(k),required=['name','retail_price','wholesale_price'];if(required.some(k=>idx(k)<0))throw Error('CSV needs columns: name, retail_price, wholesale_price (optional: hindi_name)');let added=0;for(let r of rows){let name=r[idx('name')]?.trim();if(!name)continue;let code=idx('code')>=0?r[idx('code')]:'';let p={id:'p'+Date.now()+Math.random().toString(16).slice(2),name,hindi:hindiFor(name),brand:idx('brand')>=0?r[idx('brand')]||'':'',code:code||'',retail:Number(r[idx('retail_price')]),wholesale:Number(r[idx('wholesale_price')]),updated:new Date().toISOString()};if(!Number.isFinite(p.retail)||!Number.isFinite(p.wholesale))continue;let old=db.products.find(x=>p.code&&x.code===p.code||x.name.toLowerCase()===p.name.toLowerCase());if(old){p.id=old.id;db.products[db.products.indexOf(old)]=p}else db.products.push(p);added++}persist();renderProducts();alert(added+' product rows imported or updated.')}catch(err){alert(err.message||'Could not read this CSV.')}e.target.value=''};
 load();db.products.forEach(p=>{p.hindi=hindiFor(p.name)});persist();updateCounts();renderSearch();renderCart();
 })();
-</script></body></html>
+</script><div id="offlineStatus" style="position:fixed;left:10px;bottom:10px;z-index:19;background:#fff;border:1px solid #ddd;border-radius:8px;padding:5px 8px;font:11px system-ui;color:#64748b">Setting up offline support…</div>
+
+<script>
+// Register the offline worker on the GitHub Pages project path.
+if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js', { scope: './' })
+      .then(() => navigator.serviceWorker.ready)
+      .then(() => {
+        const el = document.getElementById('offlineStatus');
+        if (el) el.textContent = 'Offline support ready';
+      })
+      .catch((err) => console.error('Offline setup failed:', err));
+  });
+}
+</script>
+</body></html>
